@@ -1,0 +1,25 @@
+# Isolated profile patch for gpt56-sol-test.
+#
+# The model route (the relay provider) lives in the host composition and user
+# settings — it is NOT configured here, so this profile reuses the existing
+# route without touching or copying any API key. This file only selects the
+# `gpt56-sol` agent preset as this profile's default and leaves the base/web
+# bundles untouched.
+#
+# To also install the companion as an out-of-tree plugin row for this profile
+# (instead of via the preset), uncomment the insert block after building the
+# package into lib/.
+
+# Select the Sol preset as the default agent composition for this profile.
+- id: agent-presets
+  patch:
+    default: gpt56-sol
+
+# (Optional) direct row, alternative to the preset. Only one of the two is
+# needed — the preset above already mounts the companion.
+# - id: gpt56-sol-kit-insert
+#   insert: after
+#   after: persona
+#   entry:
+#     id: gpt56-sol-kit
+#     name: '@deepseek-ai/dsh-gpt56-sol-kit'
