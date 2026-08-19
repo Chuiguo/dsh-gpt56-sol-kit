@@ -197,6 +197,7 @@ const SolConfigSchema = z.object({
   maxWorkflowSteps: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxWorkflowSteps),
   maxFixRounds: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxFixRounds),
   maxConsecutiveToolErrors: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxConsecutiveToolErrors),
+  maxConsecutiveRequestErrors: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxConsecutiveRequestErrors),
   maxIdenticalErrorRetries: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxIdenticalErrorRetries),
   maxWallTimeMinutes: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxWallTimeMinutes),
   maxInputTokens: z.union([z.natural(), z.const(null)]).default(null),
@@ -421,7 +422,7 @@ export function apply(ctx: Context, config?: Config): void {
     state.consecutiveRequestErrors += 1
     state.identicalRequestRetries = state.lastRequestFailureFingerprint === fingerprint ? state.identicalRequestRetries + 1 : 0
     state.lastRequestFailureFingerprint = fingerprint
-    const decision = retryDecision(failureClass, state.identicalRequestRetries, state.consecutiveRequestErrors, runtimeConfig.maxIdenticalErrorRetries, runtimeConfig.maxConsecutiveToolErrors)
+    const decision = retryDecision(failureClass, state.identicalRequestRetries, state.consecutiveRequestErrors, runtimeConfig.maxIdenticalErrorRetries, runtimeConfig.maxConsecutiveRequestErrors)
     if (decision === 'retry') {
       persistState(agent, state)
       return { kind: 'retry' as const }
@@ -572,6 +573,7 @@ export function apply(ctx: Context, config?: Config): void {
       state.consecutiveRequestErrors = 0
       state.lastRequestFailureFingerprint = undefined
       state.identicalRequestRetries = 0
+      state.providerFailures = []
       const usage: TokenUsage | undefined = event.data.usage
       if (usage !== undefined) {
         state.inputTokens += usage.inputTokens
@@ -585,7 +587,6 @@ export function apply(ctx: Context, config?: Config): void {
       if (event.data.error !== undefined) state.consecutiveToolErrors += 1
       else {
         state.consecutiveToolErrors = 0
-        state.consecutiveRequestErrors = 0
       }
       const failureClass = event.data.error === undefined
         ? undefined
@@ -593,7 +594,9 @@ export function apply(ctx: Context, config?: Config): void {
       const evidence = event.data.error === undefined
         ? { kind: 'implementation' as const, detail: `tool ${event.data.message.source.callId} completed`, passed: true }
         : { kind: 'failure' as const, detail: `${failureClass}: ${event.data.error.code}`, passed: false }
-      if (state.workflow.phase === 'implement' && event.data.error === undefined) {
+      const implementationCall = [...session.events].reverse().find(candidate => candidate.type === 'tool/call' && candidate.data.callId === event.data.message.source.callId)
+      const implementationTool = implementationCall?.type === 'tool/call' && /^(write|edit|str_replace_editor)$/.test(implementationCall.data.name)
+      if (state.workflow.phase === 'implement' && event.data.error === undefined && implementationTool) {
         state.workflow = transition(state.workflow, 'verify', evidence)
       } else if (state.workflow.phase === 'verify' && event.data.error !== undefined) {
         const next = failureTransition(state.workflow, evidence.detail).next
@@ -706,7 +709,12 @@ export function apply(ctx: Context, config?: Config): void {
         if (!isSol || state === undefined) return { kind: 'error', text: 'Sol mode is inactive for the current model.' }
         const liveEvents = agent.session.events.filter(event => event.seq >= state.taskStartedAtSeq)
         const toolCalls: VerificationToolCall[] = liveEvents.filter(event => event.type === 'tool/call').map(event => ({ callId: String(event.data.callId), name: event.data.name, arguments: event.data.arguments }))
-        const toolResults: VerificationToolResult[] = liveEvents.filter(event => event.type === 'tool/result').map(event => ({ callId: String(event.data.message.source.callId), ...(event.data.error === undefined ? {} : { errorCode: event.data.error.code }) }))
+        const toolResults: VerificationToolResult[] = liveEvents.filter(event => event.type === 'tool/result').map(event => {
+          const result: VerificationToolResult = { callId: String(event.data.message.source.callId) }
+          if (event.data.error !== undefined) result.errorCode = event.data.error.code
+          if (event.data.meta !== undefined && typeof event.data.meta === 'object' && event.data.meta !== null) result.meta = event.data.meta as NonNullable<VerificationToolResult['meta']>
+          return result
+        })
         const evidence = collectVerificationEvidence({ calls: toolCalls, results: toolResults, providerFailures: state.providerFailures, webTask: state.workflow.profile.scope === 'frontend' } satisfies SessionVerificationInput)
         const result = assessVerification(evidence)
         if (result.status === 'PASS') {

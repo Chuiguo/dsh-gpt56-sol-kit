@@ -10,7 +10,7 @@ import { parseSolCommand, renderCapabilities, renderWorkflow } from '../src/comm
 
 const good = {
   goalCompleted: true, files: [{ path: 'src/a.ts', exists: true, authorized: true }], diffOnlyRelevant: true,
-  diffInspected: true, testsRan: true, testsPassed: true, buildRan: true, buildPassed: true,
+  diffInspected: true, authorizationKnown: true, commandResultsKnown: true, testsRan: true, testsPassed: true, buildRan: true, buildPassed: true,
   webTask: false, browserAcceptance: false, claimsExaggerated: false, unexplainedFailures: [], credentialsLeaked: false,
 }
 

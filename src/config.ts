@@ -83,6 +83,8 @@ export interface Config {
   maxFixRounds: number
   /** Maximum consecutive tool failures before stopping or blocking. */
   maxConsecutiveToolErrors: number
+  /** Maximum consecutive Provider request failures before blocking. */
+  maxConsecutiveRequestErrors: number
   /** Maximum retries for one identical classified error. */
   maxIdenticalErrorRetries: number
   /** Maximum elapsed workflow time in minutes. */
@@ -122,6 +124,7 @@ export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
   maxWorkflowSteps: 40,
   maxFixRounds: 2,
   maxConsecutiveToolErrors: 4,
+  maxConsecutiveRequestErrors: 4,
   maxIdenticalErrorRetries: 1,
   maxWallTimeMinutes: 20,
   maxInputTokens: null,
@@ -207,6 +210,7 @@ export function normalizeConfig(input: unknown): SolConfig {
     maxWorkflowSteps: raw.maxWorkflowSteps === undefined ? DEFAULT_CONFIG.maxWorkflowSteps : expectNonNegativeInt(raw.maxWorkflowSteps, 'maxWorkflowSteps'),
     maxFixRounds: raw.maxFixRounds === undefined ? DEFAULT_CONFIG.maxFixRounds : expectNonNegativeInt(raw.maxFixRounds, 'maxFixRounds'),
     maxConsecutiveToolErrors: raw.maxConsecutiveToolErrors === undefined ? DEFAULT_CONFIG.maxConsecutiveToolErrors : expectNonNegativeInt(raw.maxConsecutiveToolErrors, 'maxConsecutiveToolErrors'),
+    maxConsecutiveRequestErrors: raw.maxConsecutiveRequestErrors === undefined ? DEFAULT_CONFIG.maxConsecutiveRequestErrors : expectNonNegativeInt(raw.maxConsecutiveRequestErrors, 'maxConsecutiveRequestErrors'),
     maxIdenticalErrorRetries: raw.maxIdenticalErrorRetries === undefined ? DEFAULT_CONFIG.maxIdenticalErrorRetries : expectNonNegativeInt(raw.maxIdenticalErrorRetries, 'maxIdenticalErrorRetries'),
     maxWallTimeMinutes: raw.maxWallTimeMinutes === undefined ? DEFAULT_CONFIG.maxWallTimeMinutes : expectNonNegativeInt(raw.maxWallTimeMinutes, 'maxWallTimeMinutes'),
     maxInputTokens: raw.maxInputTokens === undefined ? DEFAULT_CONFIG.maxInputTokens : expectNonNegativeOrNull(raw.maxInputTokens, 'maxInputTokens'),

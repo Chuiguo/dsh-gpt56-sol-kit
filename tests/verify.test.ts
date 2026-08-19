@@ -6,6 +6,8 @@ const good = {
   goalCompleted: true,
   files: [{ path: 'src/a.ts', exists: true, authorized: true }],
   diffOnlyRelevant: true,
+  authorizationKnown: true,
+  commandResultsKnown: true,
   diffInspected: true,
   testsRan: true,
   testsPassed: true,
@@ -98,8 +100,8 @@ test('unauthorized file path fails', () => {
 })
 
 test('21: credential leakage is detected', () => {
-  assert.equal(looksLikeCredentialLeak('Authorization: Bearer test-token-abcdef12345678'), true)
-  assert.equal(looksLikeCredentialLeak('api_key=test-secret-1234567890'), true)
+  assert.equal(looksLikeCredentialLeak('Authorization: Bearer sk-abcdef12345678'), true)
+  assert.equal(looksLikeCredentialLeak('api_key=sk-1234567890'), true)
   assert.equal(looksLikeCredentialLeak('x-api-key: 1234567890abcdef'), true)
   assert.equal(looksLikeCredentialLeak('set the API key in settings'), false)
 })

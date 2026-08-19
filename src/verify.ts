@@ -10,8 +10,12 @@ export interface VerificationEvidence {
   goalCompleted: boolean
   /** Target files with existence and authorization facts. */
   files: ReadonlyArray<{ path: string; exists: boolean; authorized: boolean }>
-  /** Whether the diff contains only relevant changes (true when no diff exists). */
+  /** Whether the diff was proven to contain only relevant changes. */
   diffOnlyRelevant: boolean
+  /** Whether the host provided enough path facts to assess authorization. */
+  authorizationKnown?: boolean
+  /** Whether test/build tools provided structured success evidence. */
+  commandResultsKnown?: boolean
   /** Whether a diff was inspected at all. */
   diffInspected: boolean
   /** Whether tests actually ran. */
@@ -64,6 +68,8 @@ export interface VerificationToolCall {
 export interface VerificationToolResult {
   callId: string
   errorCode?: string
+  /** Structured host facts attached by the tool result. */
+  meta?: { exitCode?: number; exists?: boolean; authorized?: boolean; diffOnlyRelevant?: boolean; browserAccepted?: boolean }
 }
 
 export interface SessionVerificationInput {
@@ -82,33 +88,45 @@ export function collectVerificationEvidence(input: SessionVerificationInput): Ve
   const failed = input.results.filter(result => result.errorCode !== undefined).map(result => result.errorCode ?? 'tool failure')
   const names = (call: VerificationToolCall) => `${call.name} ${call.arguments}`.toLowerCase()
   const testCalls = paired.filter(call => /test|vitest|jest/.test(names(call)))
-  const successfulTestCalls = successful.filter(call => /test|vitest|jest/.test(names(call)))
   const buildCalls = paired.filter(call => /build|tsc|typecheck|lint|compile/.test(names(call)))
-  const successfulBuildCalls = successful.filter(call => /build|tsc|typecheck|lint|compile/.test(names(call)))
   const diffCalls = paired.filter(call => /git diff|diff|status/.test(names(call)))
-  const successfulDiffCalls = successful.filter(call => /git diff|diff|status/.test(names(call)))
   const browserCalls = successful.filter(call => /browser|playwright|screenshot/.test(names(call)))
+  const testResults = testCalls.map(call => results.get(call.callId))
+  const buildResults = buildCalls.map(call => results.get(call.callId))
+  const diffResults = diffCalls.map(call => results.get(call.callId))
+  const browserResults = browserCalls.map(call => results.get(call.callId))
   const fileCalls = successful.filter(call => /^(read|read_image|write|edit|str_replace_editor)$/.test(call.name))
   const files = fileCalls.map(call => {
     let args: { file_path?: unknown; path?: unknown } = {}
     try { args = JSON.parse(call.arguments) as typeof args } catch { /* malformed tool args are incomplete evidence */ }
     const path = typeof args.file_path === 'string' ? args.file_path : typeof args.path === 'string' ? args.path : call.name
-    return { path, exists: true, authorized: !/^(?:[a-z]:[\\/]|[\\/]{2}|\/)/i.test(path) }
+    const result = results.get(call.callId)
+    return { path, exists: result?.meta?.exists === true, authorized: result?.meta?.authorized === true }
   })
   const diffInspected = diffCalls.length > 0
   const testsRan = testCalls.length > 0
   const buildRan = buildCalls.length > 0
-  const browserAcceptance = browserCalls.length > 0
+  const authorizationKnown = fileCalls.every(call => {
+    const meta = results.get(call.callId)?.meta
+    return typeof meta?.exists === 'boolean' && typeof meta.authorized === 'boolean'
+  })
+  const commandResultsKnown = [...testResults, ...buildResults].every(result => typeof result?.meta?.exitCode === 'number')
+  const testsPassed = testsRan && testResults.every(result => result?.meta?.exitCode === 0)
+  const buildPassed = buildRan && buildResults.every(result => result?.meta?.exitCode === 0)
+  const diffOnlyRelevant = diffInspected && diffResults.every(result => result?.meta?.diffOnlyRelevant === true)
+  const browserAcceptance = browserCalls.length > 0 && browserResults.every(result => result?.meta?.browserAccepted === true)
   const unexplainedFailures = [...failed, ...(input.providerFailures ?? [])]
   return {
-    goalCompleted: fileCalls.length > 0 || (!input.webTask && (testsRan || buildRan)),
+    goalCompleted: fileCalls.length > 0 || (!input.webTask && (testsPassed || buildPassed)),
     files,
-    diffOnlyRelevant: diffInspected && successfulDiffCalls.length === diffCalls.length,
+    diffOnlyRelevant,
+    authorizationKnown,
+    commandResultsKnown,
     diffInspected,
     testsRan,
-    testsPassed: testsRan && successfulTestCalls.length === testCalls.length,
+    testsPassed,
     buildRan,
-    buildPassed: buildRan && successfulBuildCalls.length === buildCalls.length,
+    buildPassed,
     webTask: input.webTask,
     browserAcceptance,
     claimsExaggerated: false,
@@ -208,6 +226,19 @@ export function assessVerification(evidence: VerificationEvidence): Verification
     label: 'No credential leakage',
     pass: !evidence.credentialsLeaked,
     detail: evidence.credentialsLeaked ? 'credentials appear leaked' : 'no credentials found',
+  })
+
+  checks.push({
+    id: 'authorization-evidence',
+    label: 'Authorization facts are known',
+    pass: evidence.authorizationKnown === true,
+    detail: evidence.authorizationKnown === true ? 'authorization facts supplied by host' : 'host did not supply authorization facts',
+  })
+  checks.push({
+    id: 'command-evidence',
+    label: 'Command results are structured',
+    pass: evidence.commandResultsKnown === true,
+    detail: evidence.commandResultsKnown === true ? 'structured exit results supplied' : 'structured exit results unavailable',
   })
 
   const passed = checks.every(check => check.pass)

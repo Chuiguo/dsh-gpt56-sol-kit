@@ -13,8 +13,12 @@ export interface VerificationEvidence {
         exists: boolean;
         authorized: boolean;
     }>;
-    /** Whether the diff contains only relevant changes (true when no diff exists). */
+    /** Whether the diff was proven to contain only relevant changes. */
     diffOnlyRelevant: boolean;
+    /** Whether the host provided enough path facts to assess authorization. */
+    authorizationKnown?: boolean;
+    /** Whether test/build tools provided structured success evidence. */
+    commandResultsKnown?: boolean;
     /** Whether a diff was inspected at all. */
     diffInspected: boolean;
     /** Whether tests actually ran. */
@@ -62,6 +66,14 @@ export interface VerificationToolCall {
 export interface VerificationToolResult {
     callId: string;
     errorCode?: string;
+    /** Structured host facts attached by the tool result. */
+    meta?: {
+        exitCode?: number;
+        exists?: boolean;
+        authorized?: boolean;
+        diffOnlyRelevant?: boolean;
+        browserAccepted?: boolean;
+    };
 }
 export interface SessionVerificationInput {
     calls: readonly VerificationToolCall[];

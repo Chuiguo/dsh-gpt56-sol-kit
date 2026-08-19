@@ -68,6 +68,8 @@ export interface Config {
     maxFixRounds: number;
     /** Maximum consecutive tool failures before stopping or blocking. */
     maxConsecutiveToolErrors: number;
+    /** Maximum consecutive Provider request failures before blocking. */
+    maxConsecutiveRequestErrors: number;
     /** Maximum retries for one identical classified error. */
     maxIdenticalErrorRetries: number;
     /** Maximum elapsed workflow time in minutes. */

@@ -3,6 +3,7 @@ export declare const DEFAULT_WORKFLOW_BUDGET: Readonly<{
     maxWorkflowSteps: 40;
     maxFixRounds: 2;
     maxConsecutiveToolErrors: 4;
+    maxConsecutiveRequestErrors: 4;
     maxIdenticalErrorRetries: 1;
     maxWallTimeMinutes: 20;
     maxInputTokens: number | null;
