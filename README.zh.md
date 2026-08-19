@@ -2,13 +2,15 @@
 
 [English](README.md) | 中文
 
+**当前版本：** [`v0.1.0-rc.6`](https://github.com/Chuiguo/dsh-gpt56-sol-kit/releases/tag/v0.1.0-rc.6) · V2 工作流架构
+
 这是一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的非官方社区 GPT-5.6-Sol companion plugin。它运行在已有模型路由之上：不注册 LLM provider、不发送 HTTP 请求、不处理 SSE、不读取 API key、不重实现 Responses 或 Chat Completions，也不修改 `llm-pi-ai` 或 Harness 核心源码。
 
 > 本仓库是社区项目，不是 DeepSeek AI 官方发布包。内部包名沿用 DSH 源码仓库的解析约定，但本项目不会发布到 `@deepseek-ai` npm 组织。
 
 只有当前 provider/model 匹配配置的 Sol 模式时才启用。其他模型不会接收 Sol 提示词、工具策略、命令状态或用量统计。
 
-## V2 能力
+## RC6 能力（V2 工作流架构）
 
 | 能力 | 行为 |
 |---|---|

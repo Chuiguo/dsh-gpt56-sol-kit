@@ -2,13 +2,15 @@
 
 English | [中文](README.zh.md)
 
+**Current release:** [`v0.1.0-rc.6`](https://github.com/Chuiguo/dsh-gpt56-sol-kit/releases/tag/v0.1.0-rc.6) · V2 workflow architecture
+
 An unofficial community GPT-5.6-Sol companion plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It operates on the existing model route: it registers no LLM provider, makes no HTTP request, handles no SSE, reads no API key, reimplements no Responses or Chat Completions, and modifies neither `llm-pi-ai` nor Harness core source.
 
 > This repository is a community project and is not an official DeepSeek AI package. The internal package identifier follows the DSH source-checkout resolver convention; the project is not published under the `@deepseek-ai` npm organization.
 
 Sol behavior activates only when the current provider/model matches configured Sol patterns. Other models receive no Sol prompt, tool policy, command state, or usage tracking.
 
-## V2 capabilities
+## RC6 capabilities (V2 workflow architecture)
 
 | Capability | Behavior |
 |---|---|
