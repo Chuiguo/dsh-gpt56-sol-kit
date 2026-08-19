@@ -32,23 +32,24 @@ import type { Config, SolMode } from './config.ts'
 import { isSolRoute } from './model-match.ts'
 import { MODES, initialModeState, requiresConfirmation, resetModeState, resolveRequestOverrides, selectModeState } from './modes.ts'
 import { solPromptSection } from './prompt.ts'
-import { deniedCategoriesForMode, deniedToolsForMode, isMutatingTool } from './tool-policy.ts'
+import { isMutatingTool } from './tool-policy.ts'
 import { contextDecision } from './context-policy.ts'
 import { budgetDecision, computeCost, pricesKnown } from './cost.ts'
 import { parseSolCommand, renderBudget, renderCapabilities, renderStatus, renderWorkflow } from './commands.ts'
 import { classifyTask } from './task-profile.ts'
-import { createWorkflow, transition } from './workflow.ts'
+import { createWorkflow, failureTransition, transition } from './workflow.ts'
 import type { WorkflowState } from './workflow.ts'
 import { resolveCapabilities } from './capabilities.ts'
 import { evaluateBudget } from './budget-v2.ts'
 import { resolveEffectivePolicy } from './effective-policy.ts'
-import { assessVerification, looksLikeCredentialLeak } from './verify.ts'
-import { classifyFailure } from './preflight.ts'
+import { assessVerification, collectVerificationEvidence } from './verify.ts'
+import type { SessionVerificationInput, VerificationToolCall, VerificationToolResult } from './verify.ts'
+import { classifyFailure, retryDecision } from './preflight.ts'
 
 export const name = 'gpt56-sol-kit'
 
 interface SolPersistedState {
-  schemaVersion: 1
+  schemaVersion: 2
   mode: SolMode
   modeExplicitlySelected: boolean
   workflow: WorkflowState
@@ -57,7 +58,12 @@ interface SolPersistedState {
   outputTokens: number
   startedAt: number
   consecutiveToolErrors: number
+  consecutiveRequestErrors: number
+  lastRequestFailureFingerprint?: string
+  identicalRequestRetries: number
   classifiedTurn?: number
+  taskStartedAtSeq: number
+  providerFailures: string[]
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -98,12 +104,73 @@ interface AgentState {
   workflow: WorkflowState
   startedAt: number
   consecutiveToolErrors: number
+  consecutiveRequestErrors: number
+  lastRequestFailureFingerprint: string | undefined
+  identicalRequestRetries: number
+  taskStartedAtSeq: number
+  providerFailures: string[]
   classifiedTurn: number | undefined
 }
 
 /** Resolve the exact-model reasoning/context metadata, cached per route. */
 function routeKey(provider: string, model: string): string {
   return `${provider}\u0000${model}`
+}
+
+const WORKFLOW_PHASES = new Set(['idle', 'inspect', 'implement', 'verify', 'review', 'fix', 'complete', 'blocked'])
+const TASK_SCOPES = new Set(['answer', 'diagnose', 'modify', 'review', 'frontend', 'deep-analysis'])
+const EVIDENCE_KINDS = new Set(['inspection', 'implementation', 'verification', 'review', 'failure', 'blocked'])
+
+function finiteNonNegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+function isValidPersistedState(value: Record<string, unknown>): boolean {
+  const workflow = value.workflow as Record<string, unknown> | undefined
+  const profile = workflow?.profile as Record<string, unknown> | undefined
+  const evidence = workflow?.evidence
+  const validEvidence = Array.isArray(evidence) && evidence.every(item => {
+    const record = item as Record<string, unknown>
+    return record !== null && EVIDENCE_KINDS.has(String(record.kind)) && typeof record.detail === 'string'
+      && (record.passed === undefined || typeof record.passed === 'boolean')
+  })
+  return value.schemaVersion === 2
+    && isSolMode(value.mode)
+    && typeof value.modeExplicitlySelected === 'boolean'
+    && workflow !== undefined
+    && WORKFLOW_PHASES.has(String(workflow.phase))
+    && profile !== undefined
+    && TASK_SCOPES.has(String(profile.scope))
+    && isSolMode(profile.mode)
+    && typeof profile.explicit === 'boolean'
+    && typeof profile.reason === 'string'
+    && typeof profile.requiresConfirmation === 'boolean'
+    && finiteNonNegative(workflow.steps)
+    && Number.isInteger(workflow.steps)
+    && finiteNonNegative(workflow.fixRounds)
+    && Number.isInteger(workflow.fixRounds)
+    && finiteNonNegative(workflow.maxFixRounds)
+    && Number.isInteger(workflow.maxFixRounds)
+    && workflow.fixRounds <= workflow.maxFixRounds
+    && validEvidence
+    && (workflow.lastError === null || typeof workflow.lastError === 'string')
+    && finiteNonNegative(value.inputTokens)
+    && finiteNonNegative(value.cachedInputTokens)
+    && finiteNonNegative(value.outputTokens)
+    && finiteNonNegative(value.startedAt)
+    && value.startedAt > 0
+    && finiteNonNegative(value.consecutiveToolErrors)
+    && Number.isInteger(value.consecutiveToolErrors)
+    && finiteNonNegative(value.consecutiveRequestErrors)
+    && Number.isInteger(value.consecutiveRequestErrors)
+    && finiteNonNegative(value.identicalRequestRetries)
+    && Number.isInteger(value.identicalRequestRetries)
+    && (value.lastRequestFailureFingerprint === undefined || typeof value.lastRequestFailureFingerprint === 'string')
+    && finiteNonNegative(value.taskStartedAtSeq)
+    && Number.isInteger(value.taskStartedAtSeq)
+    && Array.isArray(value.providerFailures)
+    && value.providerFailures.every(item => typeof item === 'string')
+    && (value.classifiedTurn === undefined || (finiteNonNegative(value.classifiedTurn) && Number.isInteger(value.classifiedTurn)))
 }
 
 /** The settings schema (schemastery) driving the built-in configuration form. */
@@ -127,8 +194,6 @@ const SolConfigSchema = z.object({
   perSessionBudget: z.union([z.number().min(0), z.const(null)]).default(null),
   maxRequiresConfirmation: z.boolean().default(DEFAULT_CONFIG.maxRequiresConfirmation),
   proRequiresConfirmation: z.boolean().default(DEFAULT_CONFIG.proRequiresConfirmation),
-  secondPass: z.boolean().default(DEFAULT_CONFIG.secondPass),
-  useSubagents: z.boolean().default(DEFAULT_CONFIG.useSubagents),
   maxWorkflowSteps: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxWorkflowSteps),
   maxFixRounds: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxFixRounds),
   maxConsecutiveToolErrors: z.number().step(1).min(0).default(DEFAULT_CONFIG.maxConsecutiveToolErrors),
@@ -197,9 +262,14 @@ export function apply(ctx: Context, config?: Config): void {
         cachedInputTokens: 0,
         outputTokens: 0,
         warned: false,
-        workflow: createWorkflow(classifyTask('', runtimeConfig.defaultMode)),
+        workflow: createWorkflow(classifyTask('', runtimeConfig.defaultMode), runtimeConfig.maxFixRounds),
         startedAt: Date.now(),
         consecutiveToolErrors: 0,
+        consecutiveRequestErrors: 0,
+        lastRequestFailureFingerprint: undefined,
+        identicalRequestRetries: 0,
+        taskStartedAtSeq: agent.session.events.length,
+        providerFailures: [],
         classifiedTurn: undefined,
       }
       states.set(agent.session, state)
@@ -207,9 +277,9 @@ export function apply(ctx: Context, config?: Config): void {
     return state
   }
 
-  function persistState(agent: Agent, state: AgentState): void {
-    agent.session.append(STATE_EVENT, {
-      schemaVersion: 1,
+  function snapshotState(state: AgentState): SolPersistedState {
+    return {
+      schemaVersion: 2,
       mode: state.mode,
       modeExplicitlySelected: state.modeExplicitlySelected,
       workflow: state.workflow,
@@ -218,19 +288,32 @@ export function apply(ctx: Context, config?: Config): void {
       outputTokens: state.outputTokens,
       startedAt: state.startedAt,
       consecutiveToolErrors: state.consecutiveToolErrors,
+      consecutiveRequestErrors: state.consecutiveRequestErrors,
+      ...(state.lastRequestFailureFingerprint === undefined ? {} : { lastRequestFailureFingerprint: state.lastRequestFailureFingerprint }),
+      identicalRequestRetries: state.identicalRequestRetries,
+      taskStartedAtSeq: state.taskStartedAtSeq,
+      providerFailures: [...state.providerFailures],
       ...(state.classifiedTurn === undefined ? {} : { classifiedTurn: state.classifiedTurn }),
-    })
+    }
+  }
+
+  function persistState(agent: Agent, state: AgentState): void {
+    agent.session.append(STATE_EVENT, snapshotState(state))
   }
 
   function restoreState(agent: Agent, state: AgentState): void {
     const event = [...agent.session.events].reverse().find(item => item.type === STATE_EVENT)
     if (event === undefined) return
-    const saved = event.data as unknown as Partial<SolPersistedState> & { schemaVersion?: unknown }
-    if (saved.schemaVersion !== 1 || !isSolMode(saved.mode) || saved.workflow === undefined || typeof saved.workflow.phase !== 'string') {
+    const saved = event.data as unknown as Record<string, unknown>
+    const version = saved.schemaVersion
+    const migrated = version === 1
+      ? { ...saved, schemaVersion: 2, consecutiveRequestErrors: 0, identicalRequestRetries: 0, taskStartedAtSeq: 0, providerFailures: [], workflow: { ...(saved.workflow as Record<string, unknown>), maxFixRounds: runtimeConfig.maxFixRounds } }
+      : saved
+    if (!isValidPersistedState(migrated)) {
       ctx.logger.warn('gpt56-sol-kit: ignoring invalid persisted state')
       return
     }
-    const valid = saved as SolPersistedState
+    const valid = migrated as unknown as SolPersistedState
     state.mode = valid.mode
     state.modeExplicitlySelected = valid.modeExplicitlySelected
     state.workflow = valid.workflow
@@ -239,15 +322,25 @@ export function apply(ctx: Context, config?: Config): void {
     state.outputTokens = valid.outputTokens
     state.startedAt = valid.startedAt
     state.consecutiveToolErrors = valid.consecutiveToolErrors
+    state.consecutiveRequestErrors = valid.consecutiveRequestErrors
+    state.lastRequestFailureFingerprint = valid.lastRequestFailureFingerprint
+    state.identicalRequestRetries = valid.identicalRequestRetries
+    state.taskStartedAtSeq = valid.taskStartedAtSeq
+    state.providerFailures = [...valid.providerFailures]
     state.classifiedTurn = valid.classifiedTurn
     applyRestriction(agent, state)
   }
 
   function resetWorkflow(agent: Agent, state: AgentState): void {
     resetModeState(state, entryConfig.defaultMode)
-    state.workflow = createWorkflow(classifyTask('', entryConfig.defaultMode))
+    state.workflow = createWorkflow(classifyTask('', entryConfig.defaultMode), runtimeConfig.maxFixRounds)
     state.warned = false
     state.consecutiveToolErrors = 0
+    state.consecutiveRequestErrors = 0
+    state.lastRequestFailureFingerprint = undefined
+    state.identicalRequestRetries = 0
+    state.taskStartedAtSeq = agent.session.events.length
+    state.providerFailures = []
     state.classifiedTurn = undefined
     applyRestriction(agent, state)
     persistState(agent, state)
@@ -282,7 +375,7 @@ export function apply(ctx: Context, config?: Config): void {
   function switchMode(agent: Agent, state: AgentState, mode: SolMode): void {
     selectModeState(state, mode)
     const profile = classifyTask('', mode)
-    state.workflow = createWorkflow(profile)
+    state.workflow = createWorkflow(profile, runtimeConfig.maxFixRounds)
     state.warned = false
     applyRestriction(agent, state)
     persistState(agent, state)
@@ -322,8 +415,17 @@ export function apply(ctx: Context, config?: Config): void {
     if (!isSolAgent(agent)) return next()
     const state = stateFor(agent)
     const text = JSON.stringify(failure)
+    state.providerFailures.push(text)
     const failureClass = classifyFailure({ message: text }, { command: 'provider request' })
-    state.consecutiveToolErrors += 1
+    const fingerprint = `${failureClass}:${failure.code ?? ''}:${failure.message ?? ''}`
+    state.consecutiveRequestErrors += 1
+    state.identicalRequestRetries = state.lastRequestFailureFingerprint === fingerprint ? state.identicalRequestRetries + 1 : 0
+    state.lastRequestFailureFingerprint = fingerprint
+    const decision = retryDecision(failureClass, state.identicalRequestRetries, state.consecutiveRequestErrors, runtimeConfig.maxIdenticalErrorRetries, runtimeConfig.maxConsecutiveToolErrors)
+    if (decision === 'retry') {
+      persistState(agent, state)
+      return { kind: 'retry' as const }
+    }
     if (state.workflow.phase !== 'complete' && state.workflow.phase !== 'blocked') {
       state.workflow = transition(state.workflow, 'blocked', { kind: 'blocked', detail: `${failureClass}: provider request failed`, passed: false })
     }
@@ -352,7 +454,7 @@ export function apply(ctx: Context, config?: Config): void {
         ? ''
         : directUser.content.filter(block => block.type === 'text').map(block => block.text).join(' ')
       const profile = classifyTask(request)
-      state.workflow = createWorkflow(profile)
+      state.workflow = createWorkflow(profile, runtimeConfig.maxFixRounds)
       state.classifiedTurn = turn
       applyRestriction(agent, state)
       const evidence = { kind: 'inspection' as const, detail: `classified ${profile.scope} task` }
@@ -467,6 +569,9 @@ export function apply(ctx: Context, config?: Config): void {
     if (state === undefined) return
     if (event.type === STATE_EVENT) return
     if (event.type === 'assistant/message') {
+      state.consecutiveRequestErrors = 0
+      state.lastRequestFailureFingerprint = undefined
+      state.identicalRequestRetries = 0
       const usage: TokenUsage | undefined = event.data.usage
       if (usage !== undefined) {
         state.inputTokens += usage.inputTokens
@@ -478,7 +583,10 @@ export function apply(ctx: Context, config?: Config): void {
     }
     if (event.type === 'tool/result') {
       if (event.data.error !== undefined) state.consecutiveToolErrors += 1
-      else state.consecutiveToolErrors = 0
+      else {
+        state.consecutiveToolErrors = 0
+        state.consecutiveRequestErrors = 0
+      }
       const failureClass = event.data.error === undefined
         ? undefined
         : classifyFailure({ message: event.data.error.code, code: event.data.error.code }, { command: event.data.message.source.callId })
@@ -488,7 +596,7 @@ export function apply(ctx: Context, config?: Config): void {
       if (state.workflow.phase === 'implement' && event.data.error === undefined) {
         state.workflow = transition(state.workflow, 'verify', evidence)
       } else if (state.workflow.phase === 'verify' && event.data.error !== undefined) {
-        const next = state.workflow.fixRounds < runtimeConfig.maxFixRounds ? 'fix' as const : 'blocked' as const
+        const next = failureTransition(state.workflow, evidence.detail).next
         state.workflow = transition(state.workflow, next, evidence)
       }
       persistStateForSession(session, state)
@@ -501,8 +609,7 @@ export function apply(ctx: Context, config?: Config): void {
     queueMicrotask(() => {
       pendingPersistence.delete(session)
       session.append(STATE_EVENT, {
-        schemaVersion: 1,
-        mode: state.mode,
+        ...snapshotState(state),
         modeExplicitlySelected: state.modeExplicitlySelected,
         workflow: state.workflow,
         inputTokens: state.inputTokens,
@@ -597,31 +704,26 @@ export function apply(ctx: Context, config?: Config): void {
       }
       case 'verify': {
         if (!isSol || state === undefined) return { kind: 'error', text: 'Sol mode is inactive for the current model.' }
-        const toolCalls = agent.session.events.filter(event => event.type === 'tool/call')
-        const toolResults = agent.session.events.filter(event => event.type === 'tool/result')
-        const failures = toolResults.filter(event => event.data.error !== undefined)
-        const successfulResultIds = new Set(toolResults
-          .filter(event => event.data.error === undefined)
-          .map(event => event.data.message.source.callId))
-        const testCalls = toolCalls.filter(event => /test|vitest|jest/.test(event.data.name + ' ' + event.data.arguments))
-        const buildCalls = toolCalls.filter(event => /build|tsc|compile/.test(event.data.name + ' ' + event.data.arguments))
-        const browserCalls = toolCalls.filter(event => /browser|playwright/.test(event.data.name + ' ' + event.data.arguments))
-        const resultForCall = (call: typeof toolCalls[number]) => successfulResultIds.has(call.data.callId)
-        const result = assessVerification({
-          goalCompleted: state.workflow.phase === 'complete',
-          files: [],
-          diffOnlyRelevant: false,
-          diffInspected: false,
-          testsRan: testCalls.length > 0,
-          testsPassed: testCalls.length > 0 && testCalls.every(resultForCall),
-          buildRan: buildCalls.length > 0,
-          buildPassed: buildCalls.length > 0 && buildCalls.every(resultForCall),
-          webTask: state.workflow.profile.scope === 'frontend',
-          browserAcceptance: browserCalls.length > 0 && browserCalls.every(resultForCall),
-          claimsExaggerated: false,
-          unexplainedFailures: failures.map(event => event.data.error?.code ?? 'tool failure'),
-          credentialsLeaked: agent.session.events.some(event => looksLikeCredentialLeak(JSON.stringify(event.data))),
-        })
+        const liveEvents = agent.session.events.filter(event => event.seq >= state.taskStartedAtSeq)
+        const toolCalls: VerificationToolCall[] = liveEvents.filter(event => event.type === 'tool/call').map(event => ({ callId: String(event.data.callId), name: event.data.name, arguments: event.data.arguments }))
+        const toolResults: VerificationToolResult[] = liveEvents.filter(event => event.type === 'tool/result').map(event => ({ callId: String(event.data.message.source.callId), ...(event.data.error === undefined ? {} : { errorCode: event.data.error.code }) }))
+        const evidence = collectVerificationEvidence({ calls: toolCalls, results: toolResults, providerFailures: state.providerFailures, webTask: state.workflow.profile.scope === 'frontend' } satisfies SessionVerificationInput)
+        const result = assessVerification(evidence)
+        if (result.status === 'PASS') {
+          if (state.workflow.phase === 'verify') state.workflow = transition(state.workflow, 'review', { kind: 'verification', detail: 'evidence assessment passed', passed: true })
+          if (state.workflow.phase === 'review') state.workflow = transition(state.workflow, 'complete', { kind: 'review', detail: 'read-only evidence review passed', passed: true })
+          persistState(agent, state)
+          applyRestriction(agent, state)
+        } else if (result.status === 'BLOCKED' && state.workflow.phase !== 'blocked' && state.workflow.phase !== 'complete') {
+          state.workflow = transition(state.workflow, 'blocked', { kind: 'blocked', detail: result.summary, passed: false })
+          persistState(agent, state)
+          applyRestriction(agent, state)
+        } else if (result.status === 'FAIL' && state.workflow.phase === 'verify') {
+          const next = failureTransition(state.workflow, result.summary).next
+          state.workflow = transition(state.workflow, next, { kind: 'failure', detail: result.summary, passed: false })
+          persistState(agent, state)
+          applyRestriction(agent, state)
+        }
         const lines = [renderWorkflow({ phase: state.workflow.phase, scope: state.workflow.profile.scope, steps: state.workflow.steps, fixRounds: state.workflow.fixRounds, lastError: state.workflow.lastError }), '', `Result: ${result.status}`, 'Requirements:', ...result.requirements, 'Evidence:', `Tool calls: ${toolCalls.length}`, `Tool results: ${toolResults.length}`, 'Failures:', ...result.failures, 'Unauthorized changes:', ...result.unauthorizedChanges, `Required next action: ${result.requiredNextAction}`, `Can report complete: ${result.canReportComplete ? 'yes' : 'no'}`]
         return { kind: 'success', text: lines.join('\\n') }
       }
@@ -634,10 +736,13 @@ export function apply(ctx: Context, config?: Config): void {
           return { kind: 'error', text: `Unknown mode "${command.name}". Available: ${MODE_IDS.join(', ')}` }
         }
         if (command.name === 'pro') {
-          return { kind: 'error', text: 'pro mode requires the relay route to expose a `pro` reasoning effort; it is never inferred from the model name.' }
+          const info = route === undefined ? undefined : routeInfos.get(routeKey(route.provider, route.model))
+          if (info?.supported.includes('pro') !== true) {
+            return { kind: 'error', text: 'pro mode requires the relay route to expose a `pro` reasoning effort; it is never inferred from the model name.' }
+          }
         }
         const needsConfirmation = requiresConfirmation(command.name)
-        const confirmFlag = runtimeConfig.maxRequiresConfirmation
+        const confirmFlag = command.name === 'pro' ? runtimeConfig.proRequiresConfirmation : runtimeConfig.maxRequiresConfirmation
         if (needsConfirmation && confirmFlag && !command.confirm) {
           return {
             kind: 'error',
@@ -657,6 +762,7 @@ export function apply(ctx: Context, config?: Config): void {
   function buildStatus(agent: Agent, route: { provider: string; model: string } | undefined, state: AgentState | undefined) {
     const tokenMeter = ctx.get('tokenMeter')
     const mode = state?.mode ?? runtimeConfig.defaultMode
+    const policy = state === undefined ? resolveEffectivePolicy({ mode, scope: 'answer', phase: 'idle' }) : effectivePolicy(state)
     return {
       enabled: runtimeConfig.enabled,
       isSol: state !== undefined,
@@ -673,12 +779,17 @@ export function apply(ctx: Context, config?: Config): void {
         { inputTokens: state.inputTokens, cachedInputTokens: state.cachedInputTokens, outputTokens: state.outputTokens },
         runtimeConfig,
       ),
-      deniedTools: deniedToolsForMode(mode),
-      deniedCategories: deniedCategoriesForMode(mode),
+      deniedTools: policy.deniedTools,
+      deniedCategories: policy.deniedCategories,
+      scope: policy.scope,
+      phase: policy.phase,
+      readOnly: policy.readOnly,
+      allowsImplementation: policy.allowsImplementation,
       pricesKnown: pricesKnown(runtimeConfig),
       workflowPhase: state?.workflow.phase ?? 'idle',
       workflowSteps: state?.workflow.steps ?? 0,
       fixRounds: state?.workflow.fixRounds ?? 0,
+      maxFixRounds: state?.workflow.maxFixRounds ?? runtimeConfig.maxFixRounds,
       lastError: state?.workflow.lastError ?? null,
       canReportComplete: state?.workflow.phase === 'complete',
     }
@@ -706,6 +817,8 @@ export function apply(ctx: Context, config?: Config): void {
       workflowSteps: state?.workflow.steps ?? 0,
       fixRounds: state?.workflow.fixRounds ?? 0,
       toolErrors: state?.consecutiveToolErrors ?? 0,
+      requestErrors: state?.consecutiveRequestErrors ?? 0,
+      maxFixRounds: state?.workflow.maxFixRounds ?? runtimeConfig.maxFixRounds,
       elapsedMinutes: state === undefined ? 0 : Math.round((Date.now() - state.startedAt) / 60000 * 10) / 10,
       hardBudgetEnforcement: runtimeConfig.hardBudgetEnforcement,
       withinRequest: decision.withinRequest,

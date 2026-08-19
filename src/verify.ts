@@ -55,6 +55,68 @@ export interface VerificationResult {
   canReportComplete: boolean
 }
 
+export interface VerificationToolCall {
+  callId: string
+  name: string
+  arguments: string
+}
+
+export interface VerificationToolResult {
+  callId: string
+  errorCode?: string
+}
+
+export interface SessionVerificationInput {
+  calls: readonly VerificationToolCall[]
+  results: readonly VerificationToolResult[]
+  providerFailures?: readonly string[]
+  webTask: boolean
+  taskStartedAtSeq?: number
+}
+
+/** Collect conservative verification facts from paired, post-task tool events. */
+export function collectVerificationEvidence(input: SessionVerificationInput): VerificationEvidence {
+  const results = new Map(input.results.map(result => [result.callId, result]))
+  const paired = input.calls.filter(call => results.has(call.callId))
+  const successful = paired.filter(call => results.get(call.callId)?.errorCode === undefined)
+  const failed = input.results.filter(result => result.errorCode !== undefined).map(result => result.errorCode ?? 'tool failure')
+  const names = (call: VerificationToolCall) => `${call.name} ${call.arguments}`.toLowerCase()
+  const testCalls = paired.filter(call => /test|vitest|jest/.test(names(call)))
+  const successfulTestCalls = successful.filter(call => /test|vitest|jest/.test(names(call)))
+  const buildCalls = paired.filter(call => /build|tsc|typecheck|lint|compile/.test(names(call)))
+  const successfulBuildCalls = successful.filter(call => /build|tsc|typecheck|lint|compile/.test(names(call)))
+  const diffCalls = paired.filter(call => /git diff|diff|status/.test(names(call)))
+  const successfulDiffCalls = successful.filter(call => /git diff|diff|status/.test(names(call)))
+  const browserCalls = successful.filter(call => /browser|playwright|screenshot/.test(names(call)))
+  const fileCalls = successful.filter(call => /^(read|read_image|write|edit|str_replace_editor)$/.test(call.name))
+  const files = fileCalls.map(call => {
+    let args: { file_path?: unknown; path?: unknown } = {}
+    try { args = JSON.parse(call.arguments) as typeof args } catch { /* malformed tool args are incomplete evidence */ }
+    const path = typeof args.file_path === 'string' ? args.file_path : typeof args.path === 'string' ? args.path : call.name
+    return { path, exists: true, authorized: !/^(?:[a-z]:[\\/]|[\\/]{2}|\/)/i.test(path) }
+  })
+  const diffInspected = diffCalls.length > 0
+  const testsRan = testCalls.length > 0
+  const buildRan = buildCalls.length > 0
+  const browserAcceptance = browserCalls.length > 0
+  const unexplainedFailures = [...failed, ...(input.providerFailures ?? [])]
+  return {
+    goalCompleted: fileCalls.length > 0 || (!input.webTask && (testsRan || buildRan)),
+    files,
+    diffOnlyRelevant: diffInspected && successfulDiffCalls.length === diffCalls.length,
+    diffInspected,
+    testsRan,
+    testsPassed: testsRan && successfulTestCalls.length === testCalls.length,
+    buildRan,
+    buildPassed: buildRan && successfulBuildCalls.length === buildCalls.length,
+    webTask: input.webTask,
+    browserAcceptance,
+    claimsExaggerated: false,
+    unexplainedFailures,
+    credentialsLeaked: input.calls.some(call => looksLikeCredentialLeak(call.arguments)) || input.results.some(result => looksLikeCredentialLeak(result.errorCode ?? '')),
+  }
+}
+
 const CREDENTIAL_PATTERN = /((api[_-]?key|authorization|secret|token|password)\s*[:=]\s*\S{8,})|(bearer\s+[a-z0-9._-]{12,})/i
 
 /**

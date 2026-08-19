@@ -18,7 +18,7 @@ import type { Config, SolMode } from './config.ts';
 import type { WorkflowState } from './workflow.ts';
 export declare const name = "gpt56-sol-kit";
 interface SolPersistedState {
-    schemaVersion: 1;
+    schemaVersion: 2;
     mode: SolMode;
     modeExplicitlySelected: boolean;
     workflow: WorkflowState;
@@ -27,7 +27,12 @@ interface SolPersistedState {
     outputTokens: number;
     startedAt: number;
     consecutiveToolErrors: number;
+    consecutiveRequestErrors: number;
+    lastRequestFailureFingerprint?: string;
+    identicalRequestRetries: number;
     classifiedTurn?: number;
+    taskStartedAtSeq: number;
+    providerFailures: string[];
 }
 declare module '@deepseek-ai/dsh-session/types' {
     interface SessionEventMap {

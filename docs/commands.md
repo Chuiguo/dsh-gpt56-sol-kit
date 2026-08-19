@@ -14,7 +14,7 @@
 | `/sol review` | 切换到后端强制只读审查 |
 | `/sol reset` | 恢复默认设置并清理工作流状态，不影响 Provider 或凭据 |
 
-`/sol verify` 的结果为 `PASS`、`FAIL`、`INCOMPLETE` 或 `BLOCKED`。没有实际测试、构建、diff 或 Web 浏览器证据时不会返回 PASS。命令不会执行真实模型请求，也不会显示 API Key、Authorization Header、敏感 URL、图片 base64 或隐藏思考内容。
+`/sol verify` 的结果为 `PASS`、`FAIL`、`INCOMPLETE` 或 `BLOCKED`。命令只评估当前任务起点之后按 `callId` 配对的 session events，不执行模型、测试、构建或 Git 操作；没有实际测试、构建、diff 或 Web 浏览器证据时不会返回 PASS。命令不会显示 API Key、Authorization Header、敏感 URL、图片 base64 或隐藏思考内容。
 
 ## 预算
 

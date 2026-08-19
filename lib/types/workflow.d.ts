@@ -13,11 +13,13 @@ export interface WorkflowState {
     phase: WorkflowPhase;
     steps: number;
     fixRounds: number;
+    /** Maximum fix rounds for this workflow, resolved from plugin configuration. */
+    maxFixRounds: number;
     evidence: WorkflowEvidence[];
     lastError: string | null;
 }
 /** Create the initial state; auto profiles always begin at inspect. */
-export declare function createWorkflow(profile: TaskProfile): WorkflowState;
+export declare function createWorkflow(profile: TaskProfile, maxFixRounds?: number): WorkflowState;
 /** Return whether a transition is structurally allowed and evidence-backed. */
 export declare function canTransition(state: WorkflowState, next: WorkflowPhase, evidence?: WorkflowEvidence): boolean;
 /** Apply one validated transition and append its reason to the evidence log. */

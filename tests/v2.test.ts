@@ -21,6 +21,11 @@ test('auto classifies answer, diagnose, modify, review, frontend, and deep-analy
   assert.equal(classifyTask('Review this diff').scope, 'review')
   assert.equal(classifyTask('Build a responsive frontend page').scope, 'frontend')
   assert.equal(classifyTask('Research the architecture').scope, 'deep-analysis')
+  assert.equal(classifyTask('只检查，不修改').scope, 'diagnose')
+  assert.equal(classifyTask('只审查这个 diff').scope, 'review')
+  assert.equal(classifyTask('分析原因并修复').scope, 'modify')
+  assert.equal(classifyTask('修复这个前端页面').scope, 'frontend')
+  assert.equal(classifyTask('Check the bug without changing files').scope, 'diagnose')
 })
 
 test('explicit mode overrides auto and locks the profile', () => {
@@ -32,7 +37,7 @@ test('explicit mode overrides auto and locks the profile', () => {
 })
 
 test('workflow allows inspect to implement then verify and caps fixes at two', () => {
-  let state = createWorkflow(classifyTask('Implement a CLI'))
+  let state = createWorkflow(classifyTask('Implement a CLI'), 2)
   state = transition(state, 'implement', { kind: 'inspection', detail: 'authorized' })
   state = transition(state, 'verify', { kind: 'implementation', detail: 'files changed' })
   state = transition(state, 'fix', { kind: 'failure', detail: 'test failure', passed: false })
@@ -41,6 +46,11 @@ test('workflow allows inspect to implement then verify and caps fixes at two', (
   assert.equal(state.fixRounds, 2)
   assert.throws(() => transition(state, 'verify', { kind: 'implementation', detail: 'third attempt' }))
   assert.equal(failureTransition(state, 'third failure').next, 'blocked')
+  for (const limit of [0, 1, 2, 5]) {
+    const workflow = createWorkflow(classifyTask('Implement a CLI'), limit)
+    assert.equal(workflow.maxFixRounds, limit)
+    if (limit === 0) assert.equal(failureTransition({ ...workflow, phase: 'verify' }, 'failure').next, 'blocked')
+  }
 })
 
 test('answer and review profiles cannot enter implement', () => {
@@ -59,6 +69,14 @@ test('read-before-edit and retry policy are bounded', () => {
   assert.equal(retryDecision('test-failure', 0, 0), 'retry')
   assert.equal(retryDecision('test-failure', 1, 0), 'stop')
   assert.equal(retryDecision('quota', 0, 0), 'stop')
+})
+
+test('maxFixRounds is the workflow limit for 0, 1, 2, and 5', () => {
+  for (const limit of [0, 1, 2, 5]) {
+    const state = createWorkflow(classifyTask('Implement a CLI'), limit)
+    assert.equal(state.maxFixRounds, limit)
+    assert.equal(failureTransition({ ...state, phase: 'verify' }, 'failure').next, limit === 0 ? 'blocked' : 'fix')
+  }
 })
 
 test('hard budget stops while disabled budget only warns', () => {

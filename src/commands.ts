@@ -105,6 +105,11 @@ export interface StatusSnapshot {
   deniedTools: readonly string[]
   deniedCategories: readonly string[]
   pricesKnown: boolean
+  scope?: string
+  phase?: string
+  readOnly?: boolean
+  allowsImplementation?: boolean
+  canReportComplete?: boolean
 }
 
 const BALANCED_HINT = '当前 balanced 模式禁用了终端执行；如需完整编码工作流，请执行 /sol mode coding。'
@@ -122,6 +127,7 @@ export function renderStatus(s: StatusSnapshot): string {
     modeLine,
     `Reasoning: ${s.reasoning || '(provider default)'}`,
     `Reasoning overrides: ${s.reasoningOverridesEnabled ? 'enabled' : 'disabled'}`,
+    ...(s.scope === undefined ? [] : [`Task scope: ${s.scope}`, `Phase: ${s.phase ?? 'unknown'}`, `Read-only: ${s.readOnly ? 'yes' : 'no'}`, `Allows implementation: ${s.allowsImplementation ? 'yes' : 'no'}`, `Can report complete: ${s.canReportComplete ? 'yes' : 'no'}`]),
     `Context soft limit: ${s.contextSoftLimit === null ? 'derived' : s.contextSoftLimit}`,
     `Context hard limit: ${s.contextHardLimit === null ? 'derived' : s.contextHardLimit}`,
     `Session surface tokens: ${s.surfaceTokens}`,
@@ -138,6 +144,8 @@ export interface BudgetSnapshot {
   workflowSteps?: number
   fixRounds?: number
   toolErrors?: number
+  requestErrors?: number
+  maxFixRounds?: number
   elapsedMinutes?: number
   hardBudgetEnforcement?: boolean
   pricesKnown: boolean
@@ -156,7 +164,7 @@ export interface BudgetSnapshot {
 export function renderBudget(b: BudgetSnapshot): string {
   if (!b.isSol) return 'Sol plugin is inactive for the current model; no budget is tracked.'
   const lines = [
-    ...(b.workflowSteps === undefined ? [] : [`Workflow steps: ${b.workflowSteps}`, `Fix rounds: ${b.fixRounds ?? 0}`, `Tool errors: ${b.toolErrors ?? 0}`, `Elapsed minutes: ${b.elapsedMinutes ?? 0}`]),
+    ...(b.workflowSteps === undefined ? [] : [`Workflow steps: ${b.workflowSteps}`, `Fix rounds: ${b.fixRounds ?? 0}/${b.maxFixRounds ?? '?'}`, `Tool errors: ${b.toolErrors ?? 0}`, `Request errors: ${b.requestErrors ?? 0}`, `Elapsed minutes: ${b.elapsedMinutes ?? 0}`]),
     `Input tokens: ${b.inputTokens}`,
     `Cached input tokens: ${b.cachedInputTokens}`,
     `Output tokens: ${b.outputTokens}`,

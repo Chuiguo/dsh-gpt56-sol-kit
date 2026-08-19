@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-gpt56-sol-kit",
   "description": "GPT-5.6-Sol companion plugin for DeepSeek Harness: Sol prompt policy, task modes, tool-set policy, context/cost protection, commands, and verification — over the existing model route only.",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.6",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

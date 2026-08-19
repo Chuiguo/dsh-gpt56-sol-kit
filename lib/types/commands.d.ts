@@ -72,6 +72,11 @@ export interface StatusSnapshot {
     deniedTools: readonly string[];
     deniedCategories: readonly string[];
     pricesKnown: boolean;
+    scope?: string;
+    phase?: string;
+    readOnly?: boolean;
+    allowsImplementation?: boolean;
+    canReportComplete?: boolean;
 }
 /** Render the `/sol status` body. Never includes keys or request headers. */
 export declare function renderStatus(s: StatusSnapshot): string;
@@ -80,6 +85,8 @@ export interface BudgetSnapshot {
     workflowSteps?: number;
     fixRounds?: number;
     toolErrors?: number;
+    requestErrors?: number;
+    maxFixRounds?: number;
     elapsedMinutes?: number;
     hardBudgetEnforcement?: boolean;
     pricesKnown: boolean;

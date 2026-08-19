@@ -54,6 +54,24 @@ export interface VerificationResult {
     requiredNextAction: string;
     canReportComplete: boolean;
 }
+export interface VerificationToolCall {
+    callId: string;
+    name: string;
+    arguments: string;
+}
+export interface VerificationToolResult {
+    callId: string;
+    errorCode?: string;
+}
+export interface SessionVerificationInput {
+    calls: readonly VerificationToolCall[];
+    results: readonly VerificationToolResult[];
+    providerFailures?: readonly string[];
+    webTask: boolean;
+    taskStartedAtSeq?: number;
+}
+/** Collect conservative verification facts from paired, post-task tool events. */
+export declare function collectVerificationEvidence(input: SessionVerificationInput): VerificationEvidence;
 /**
  * Detect likely credential leakage in a free-text surface. Conservative: it
  * only flags explicit key-like assignments, not any occurrence of the word.

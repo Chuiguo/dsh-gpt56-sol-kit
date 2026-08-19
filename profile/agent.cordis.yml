@@ -26,8 +26,8 @@
 # reasoning defaults, `/sol` commands, and a settings namespace are all effects
 # on host-plane registries (systemPrompt/tools/commands/settings). Sits loose.
 #
-# `providerPattern` is the relay route key that serves GPT-5.6-Sol (the example
-# uses `gpt`). `modelPatterns` matches the model id; keep it precise so
+# `providerPattern` is the relay route key that serves GPT-5.6-Sol (here `gpt`,
+# the gptcodex relay). `modelPatterns` matches the model id; keep it precise so
 # `gpt-5.6-luna` / `gpt-5.6-terra` are NOT treated as Sol. Add `gpt-5.6` only if
 # you want the whole gpt-5.6 family covered. Prices stay null (unknown) — relay
 # prices are independent of OpenAI's official pricing.

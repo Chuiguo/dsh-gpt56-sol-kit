@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assessVerification, looksLikeCredentialLeak } from '../src/verify.ts'
+import { assessVerification, collectVerificationEvidence, looksLikeCredentialLeak } from '../src/verify.ts'
 
 const good = {
   goalCompleted: true,
@@ -45,6 +45,45 @@ test('all checks pass only when nothing is missing', () => {
   const r = assessVerification(good)
   assert.equal(r.passed, true)
   assert.match(r.summary, /All checks passed/)
+})
+
+test('event evidence pairs results by callId and ignores unmatched calls', () => {
+  const evidence = collectVerificationEvidence({
+    calls: [
+      { callId: 'read-1', name: 'read', arguments: '{"file_path":"src/a.ts"}' },
+      { callId: 'test-1', name: 'pwsh', arguments: 'pnpm test' },
+      { callId: 'diff-1', name: 'pwsh', arguments: 'git diff --check' },
+      { callId: 'orphan', name: 'pwsh', arguments: 'pnpm test' },
+    ],
+    results: [
+      { callId: 'read-1' }, { callId: 'test-1' }, { callId: 'diff-1' },
+    ],
+    webTask: false,
+  })
+  assert.equal(evidence.testsRan, true)
+  assert.equal(evidence.diffInspected, true)
+  assert.equal(evidence.files.length, 1)
+})
+
+test('event evidence reports missing diff as incomplete', () => {
+  const evidence = collectVerificationEvidence({ calls: [{ callId: 't', name: 'pwsh', arguments: 'pnpm test' }], results: [{ callId: 't' }], webTask: false })
+  assert.equal(assessVerification(evidence).status, 'INCOMPLETE')
+})
+
+test('event evidence propagates failed results and web acceptance requirement', () => {
+  const evidence = collectVerificationEvidence({
+    calls: [
+      { callId: 't', name: 'pwsh', arguments: 'pnpm test' },
+      { callId: 'b', name: 'pwsh', arguments: 'pnpm build' },
+      { callId: 'd', name: 'pwsh', arguments: 'git diff' },
+      { callId: 'w', name: 'browser', arguments: 'playwright acceptance' },
+    ],
+    results: [{ callId: 't', errorCode: 'test-failure' }, { callId: 'b' }, { callId: 'd' }, { callId: 'w' }],
+    webTask: true,
+  })
+  const result = assessVerification(evidence)
+  assert.equal(result.status, 'FAIL')
+  assert.equal(result.canReportComplete, false)
 })
 
 test('undisclosed failures and overstated claims fail', () => {

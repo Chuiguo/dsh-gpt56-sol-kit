@@ -15,10 +15,10 @@ Sol behavior activates only when the current provider/model matches configured S
 | Unified adaptive workflow | `auto` classifies each new task once, then uses inspect, implement, verify, review, fix, complete or blocked phases; mode, scope and phase permissions come from one derived policy |
 | Task profiles | answer, diagnose, modify, review, frontend, deep-analysis; explicit `/sol mode` wins |
 | Backend tool policy | read-only profiles cannot execute mutating tools; hard budget stops new tool execution when enabled |
-| Real verification status | `/sol verify` reports PASS, FAIL, INCOMPLETE, or BLOCKED from available evidence |
+| Evidence assessment | `/sol verify` reports PASS, FAIL, INCOMPLETE, or BLOCKED from current-task session evidence; it never executes commands |
 | Route capabilities | exact `resolveModelInfo()` metadata; unknown capabilities stay unknown |
 | Bounded recovery | error classes, one identical retry by default, quota and permanent protocol errors stop immediately |
-| Budget controls | workflow steps, fix rounds, tool errors, wall time, tokens and optional known cost |
+| Budget controls | workflow steps, configured fix rounds, tool/request errors, wall time, tokens and optional known cost |
 
 V2 improves execution reliability, evidence quality, and cost control. It does not increase the model's inherent intelligence and cannot add capabilities unsupported by the current route.
 
@@ -51,7 +51,7 @@ After installing the repository into a DSH source checkout, run the focused test
 pnpm test
 ```
 
-Build and repository checks must run from the DSH monorepo. The tests do not call a real model API. The validated baseline is 96 focused tests plus the DSH host build and documentation/catalog gates.
+Build and repository checks must run from the DSH monorepo. The tests do not call a real model API. The validated baseline is 100 focused tests plus the DSH host build and documentation/catalog gates.
 
 ## Documentation
 
@@ -82,7 +82,9 @@ The stable policy prefix is reusable while the route and mode remain unchanged. 
 
 ## Known Limitations and Deferred Work
 
-- Full PASS verification requires observable diff, command exit-code, and browser evidence; unavailable evidence correctly produces `INCOMPLETE`.
+- PASS is an evidence assessment over session events, not an independent Git or filesystem verifier. Missing observable diff, command result, or browser evidence correctly produces `INCOMPLETE`.
+- The state event uses schema v2 and safely migrates complete schema v1 snapshots; malformed snapshots are ignored.
+- `secondPass` and `useSubagents` are not public settings because no reliable subagent review consumer is mounted.
 - The repository includes a real Cordis/AgentLoop replay composition test; a Loader-backed process restart test remains deferred.
 - Bilingual pairing records for generated catalogs and package README must be updated through the repository's official i18n tooling.
 

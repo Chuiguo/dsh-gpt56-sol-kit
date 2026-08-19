@@ -15,10 +15,10 @@
 | 统一自适应工作流 | `auto` 为每个新任务分类一次，然后进入 inspect、implement、verify、review、fix、complete 或 blocked 阶段；模式、scope 和阶段权限来自统一派生策略 |
 | 任务画像 | answer、diagnose、modify、review、frontend、deep-analysis；显式 `/sol mode` 优先 |
 | 后端工具策略 | 只读画像不能执行修改工具；启用硬预算后，达到限制会停止新的工具执行 |
-| 真实验证状态 | `/sol verify` 根据可用证据报告 PASS、FAIL、INCOMPLETE 或 BLOCKED |
+| 证据评估 | `/sol verify` 根据当前任务的 session 证据报告 PASS、FAIL、INCOMPLETE 或 BLOCKED；它不会自行执行命令 |
 | 路由能力 | 使用精确的 `resolveModelInfo()` 元数据；未知能力保持 unknown |
 | 有界恢复 | 错误分类，默认只重试一次相同错误；额度错误和永久协议错误立即停止 |
-| 预算控制 | 工作流步骤、返修轮次、工具错误、墙钟时间、Token 和可选的已知费用 |
+| 预算控制 | 工作流步骤、配置的返修轮次、工具/请求错误、墙钟时间、Token 和可选的已知费用 |
 
 V2 改善执行可靠性、证据质量和成本控制。它不会提升模型固有智能，也不能增加当前路由不支持的能力。
 
@@ -51,7 +51,7 @@ DeepSeek Harness 当前仍处于 developer preview，本插件通过 DSH 源码�
 pnpm test
 ```
 
-构建和仓库检查必须从 DSH monorepo 运行。测试不会调用真实模型 API。当前验证基线为 96 项聚焦测试，以及 DSH host 构建和文档/catalog 门禁。
+构建和仓库检查必须从 DSH monorepo 运行。测试不会调用真实模型 API。当前验证基线为 100 项聚焦测试，以及 DSH host 构建和文档/catalog 门禁。
 
 ## 文档
 
@@ -82,7 +82,9 @@ pnpm test
 
 ## 已知限制与延期工作
 
-- 完整 PASS 验证需要可观察的 diff、命令退出码和浏览器证据；证据不可用时会正确返回 `INCOMPLETE`。
+- PASS 是基于 session events 的证据评估，不是独立 Git 或文件系统验证器；缺少可观察的 diff、命令结果或浏览器证据时会正确返回 `INCOMPLETE`。
+- 状态事件使用 schema v2，并安全迁移完整的 schema v1 快照；损坏快照会被忽略。
+- `secondPass` 与 `useSubagents` 不再是公开设置，因为当前没有可靠的 subagent review consumer。
 - 仓库已经包含真实 Cordis/AgentLoop replay 组合测试；Loader 驱动的进程级重启测试仍为延期工作。
 - 生成 catalog 和 package README 的双语 pairing 记录必须通过仓库官方 i18n 工具更新。
 

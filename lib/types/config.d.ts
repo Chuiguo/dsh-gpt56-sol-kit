@@ -62,10 +62,6 @@ export interface Config {
     maxRequiresConfirmation: boolean;
     /** Whether `pro` mode requires an explicit user confirmation before it applies. */
     proRequiresConfirmation: boolean;
-    /** Whether the optional second-pass review is enabled. */
-    secondPass: boolean;
-    /** Whether second-pass review may use a sub-agent when one is available. */
-    useSubagents: boolean;
     /** Maximum number of workflow phase/tool-result steps before the budget is reached. */
     maxWorkflowSteps: number;
     /** Maximum number of verify-to-fix rounds. */

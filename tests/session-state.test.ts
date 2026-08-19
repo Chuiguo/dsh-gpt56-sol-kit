@@ -8,7 +8,11 @@ import { classifyTask } from '../src/task-profile.ts'
 test('Sol state event survives Session snapshot and restore', () => {
   const session = Session.create(SessionId('sol-state-test'))
   session.append('gpt56-sol/state', {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    consecutiveRequestErrors: 0,
+    identicalRequestRetries: 0,
+    taskStartedAtSeq: 0,
+    providerFailures: [],
     mode: 'coding',
     modeExplicitlySelected: true,
     workflow: createWorkflow(classifyTask('Implement a CLI', 'coding')),

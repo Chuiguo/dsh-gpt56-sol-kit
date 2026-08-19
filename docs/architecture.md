@@ -65,4 +65,4 @@
 5. **`tools.restrict` 是可见性组合，非权限边界**（官方语义）：因此额外用 `ctx.tools.guard` 做后端强制。
 6. **`pro` 档位**：pi-ai 公开档位集合为 `off/minimal/low/medium/high/xhigh/max`，不含 `pro`；pro 模式不推断、默认禁用，仅当路由真正暴露 `pro` 档位且用户显式确认才启用（与 effort 独立配置）。
 7. **模型切换的提示词及时性**：提示词段在组装时读取 `agent.options`，会话中途切换模型可能有一个请求的延迟；推理档位在每次 `agent/request` 重新判定。
-8. **Second Pass**：优先用 `ctx.subagents` 同模型新子代理复核（`useSubagents` 开启时）；否则退化为同会话只读验证阶段。基线实现提供 `/sol verify` 纯评估 + `/sol review` 只读复核模式，子代理复核的注册需按目标部署的 subagent provider 接入。
+8. **证据评估**：`/sol verify` 只读取本任务范围内已经记录的工具调用、工具结果和 Provider 错误。它不执行命令、不调用模型，也不提供子代理复核；Harness 未公开的 diff、退出码或浏览器事实会返回 `INCOMPLETE`。

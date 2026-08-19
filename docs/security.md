@@ -20,7 +20,7 @@
 
 ## 凭据泄漏检测
 
-`verify.ts` 的 `looksLikeCredentialLeak()` 保守检测 `api_key=…`、`Authorization: Bearer …`、`x-api-key: …` 等形式，供验证工作流在最终回答/diff 中拦截疑似泄漏。
+`verify.ts` 的 `looksLikeCredentialLeak()` 保守检测 `api_key=…`、`Authorization: Bearer …`、`x-api-key: …` 等形式，供 evidence assessment 检查工具参数和错误字段中的疑似泄漏。它不是凭据扫描器，也不替代宿主凭据保护。
 
 ## V2 状态与证据
 

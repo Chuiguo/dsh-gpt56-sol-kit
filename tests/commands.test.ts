@@ -30,12 +30,13 @@ test('status hides keys and reports the route', () => {
     enabled: true, isSol: true, provider: 'openai-relay', model: 'gpt-5.6-sol', mode: 'coding',
     modeExplicitlySelected: true, reasoningOverridesEnabled: false, reasoning: 'high',
     contextSoftLimit: null, contextHardLimit: null,
-    surfaceTokens: 12000, sessionCost: null, deniedTools: [], deniedCategories: [], pricesKnown: false,
+    surfaceTokens: 12000, sessionCost: null, deniedTools: [], deniedCategories: [], pricesKnown: false, scope: 'modify', phase: 'verify', readOnly: false, allowsImplementation: true, canReportComplete: false,
   })
   assert.match(text, /Model: gpt-5.6-sol/)
   assert.match(text, /Mode: coding/)
   assert.match(text, /explicitly selected/)
   assert.match(text, /Reasoning overrides: disabled/)
+  assert.match(text, /Can report complete/)
   assert.match(text, /Denied tool categories/)
   assert.doesNotMatch(text, /api[_-]?key|authorization|bearer/i)
 })

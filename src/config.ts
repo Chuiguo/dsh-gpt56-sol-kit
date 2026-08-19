@@ -77,10 +77,6 @@ export interface Config {
   maxRequiresConfirmation: boolean
   /** Whether `pro` mode requires an explicit user confirmation before it applies. */
   proRequiresConfirmation: boolean
-  /** Whether the optional second-pass review is enabled. */
-  secondPass: boolean
-  /** Whether second-pass review may use a sub-agent when one is available. */
-  useSubagents: boolean
   /** Maximum number of workflow phase/tool-result steps before the budget is reached. */
   maxWorkflowSteps: number
   /** Maximum number of verify-to-fix rounds. */
@@ -123,8 +119,6 @@ export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
   perSessionBudget: null,
   maxRequiresConfirmation: true,
   proRequiresConfirmation: true,
-  secondPass: false,
-  useSubagents: false,
   maxWorkflowSteps: 40,
   maxFixRounds: 2,
   maxConsecutiveToolErrors: 4,
@@ -210,8 +204,6 @@ export function normalizeConfig(input: unknown): SolConfig {
     perSessionBudget: raw.perSessionBudget === undefined ? DEFAULT_CONFIG.perSessionBudget : expectNonNegativeOrNull(raw.perSessionBudget, 'perSessionBudget'),
     maxRequiresConfirmation: raw.maxRequiresConfirmation === undefined ? DEFAULT_CONFIG.maxRequiresConfirmation : expectBoolean(raw.maxRequiresConfirmation, 'maxRequiresConfirmation'),
     proRequiresConfirmation: raw.proRequiresConfirmation === undefined ? DEFAULT_CONFIG.proRequiresConfirmation : expectBoolean(raw.proRequiresConfirmation, 'proRequiresConfirmation'),
-    secondPass: raw.secondPass === undefined ? DEFAULT_CONFIG.secondPass : expectBoolean(raw.secondPass, 'secondPass'),
-    useSubagents: raw.useSubagents === undefined ? DEFAULT_CONFIG.useSubagents : expectBoolean(raw.useSubagents, 'useSubagents'),
     maxWorkflowSteps: raw.maxWorkflowSteps === undefined ? DEFAULT_CONFIG.maxWorkflowSteps : expectNonNegativeInt(raw.maxWorkflowSteps, 'maxWorkflowSteps'),
     maxFixRounds: raw.maxFixRounds === undefined ? DEFAULT_CONFIG.maxFixRounds : expectNonNegativeInt(raw.maxFixRounds, 'maxFixRounds'),
     maxConsecutiveToolErrors: raw.maxConsecutiveToolErrors === undefined ? DEFAULT_CONFIG.maxConsecutiveToolErrors : expectNonNegativeInt(raw.maxConsecutiveToolErrors, 'maxConsecutiveToolErrors'),
