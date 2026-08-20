@@ -16,6 +16,7 @@ export type SolCommand =
   | { action: 'verify' }
   | { action: 'review' }
   | { action: 'reset' }
+  | { action: 'confirm' }
   | { action: 'unknown'; text: string }
 
 /**
@@ -55,6 +56,8 @@ export function parseSolCommand(rawInput: string): SolCommand {
       return { action: 'review' }
     case 'reset':
       return { action: 'reset' }
+    case 'confirm':
+      return { action: 'confirm' }
     default:
       return { action: 'unknown', text: rawInput.trim() }
   }

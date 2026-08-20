@@ -26,6 +26,8 @@ test('auto classifies answer, diagnose, modify, review, frontend, and deep-analy
   assert.equal(classifyTask('分析原因并修复').scope, 'modify')
   assert.equal(classifyTask('修复这个前端页面').scope, 'frontend')
   assert.equal(classifyTask('Check the bug without changing files').scope, 'diagnose')
+  assert.equal(classifyTask('review and fix this code').scope, 'modify')
+  assert.equal(classifyTask('创建一个小说项目').scope, 'modify')
 })
 
 test('explicit mode overrides auto and locks the profile', () => {

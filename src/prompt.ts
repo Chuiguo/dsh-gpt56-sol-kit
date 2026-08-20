@@ -41,7 +41,7 @@ const MODE_DIRECTIVES: Record<SolMode, readonly string[]> = {
     'Separate confirmed problems, possible problems, and false positives.',
   ],
   'deep-analysis': [
-    'For novels, architecture, research, and complex plans; parallel sub-agents are allowed.',
+    'For novels, architecture, research, and complex plans; parallel sub-agents are allowed, but file writes and command execution remain disabled.',
     'Separate fact, inference, and recommendation.',
     'Never reach a conclusion without evidence.',
   ],

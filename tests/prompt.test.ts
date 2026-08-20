@@ -15,4 +15,5 @@ test('prompt carries the three-scope boundary and confirmation rule', () => {
   const text = solPromptSection('balanced')
   assert.match(text, /answer|diagnose|modify/)
   assert.match(text, /Confirm before external writes/)
+  assert.match(solPromptSection('deep-analysis'), /file writes and command execution remain disabled/)
 })

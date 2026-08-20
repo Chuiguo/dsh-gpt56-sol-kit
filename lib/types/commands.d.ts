@@ -25,6 +25,8 @@ export type SolCommand = {
 } | {
     action: 'reset';
 } | {
+    action: 'confirm';
+} | {
     action: 'unknown';
     text: string;
 };

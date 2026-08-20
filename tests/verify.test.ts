@@ -65,6 +65,7 @@ test('event evidence pairs results by callId and ignores unmatched calls', () =>
   assert.equal(evidence.testsRan, true)
   assert.equal(evidence.diffInspected, true)
   assert.equal(evidence.files.length, 1)
+  assert.equal(evidence.goalCompleted, false)
 })
 
 test('event evidence reports missing diff as incomplete', () => {

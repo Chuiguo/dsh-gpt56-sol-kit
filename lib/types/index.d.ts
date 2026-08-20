@@ -33,6 +33,7 @@ interface SolPersistedState {
     classifiedTurn?: number;
     taskStartedAtSeq: number;
     providerFailures: string[];
+    confirmedRiskTask?: boolean;
 }
 declare module '@deepseek-ai/dsh-session/types' {
     interface SessionEventMap {

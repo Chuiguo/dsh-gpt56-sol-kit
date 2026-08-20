@@ -32,7 +32,7 @@ import type { Config, SolMode } from './config.ts'
 import { isSolRoute } from './model-match.ts'
 import { MODES, initialModeState, requiresConfirmation, resetModeState, resolveRequestOverrides, selectModeState } from './modes.ts'
 import { solPromptSection } from './prompt.ts'
-import { isMutatingTool } from './tool-policy.ts'
+import { isMutatingTool, SUBAGENT_TOOLS } from './tool-policy.ts'
 import { contextDecision } from './context-policy.ts'
 import { budgetDecision, computeCost, pricesKnown } from './cost.ts'
 import { parseSolCommand, renderBudget, renderCapabilities, renderStatus, renderWorkflow } from './commands.ts'
@@ -64,6 +64,7 @@ interface SolPersistedState {
   classifiedTurn?: number
   taskStartedAtSeq: number
   providerFailures: string[]
+  confirmedRiskTask?: boolean
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -109,6 +110,7 @@ interface AgentState {
   identicalRequestRetries: number
   taskStartedAtSeq: number
   providerFailures: string[]
+  confirmedRiskTask: boolean
   classifiedTurn: number | undefined
 }
 
@@ -170,6 +172,7 @@ function isValidPersistedState(value: Record<string, unknown>): boolean {
     && Number.isInteger(value.taskStartedAtSeq)
     && Array.isArray(value.providerFailures)
     && value.providerFailures.every(item => typeof item === 'string')
+    && (value.confirmedRiskTask === undefined || typeof value.confirmedRiskTask === 'boolean')
     && (value.classifiedTurn === undefined || (finiteNonNegative(value.classifiedTurn) && Number.isInteger(value.classifiedTurn)))
 }
 
@@ -271,6 +274,7 @@ export function apply(ctx: Context, config?: Config): void {
         identicalRequestRetries: 0,
         taskStartedAtSeq: agent.session.events.length,
         providerFailures: [],
+        confirmedRiskTask: false,
         classifiedTurn: undefined,
       }
       states.set(agent.session, state)
@@ -294,6 +298,7 @@ export function apply(ctx: Context, config?: Config): void {
       identicalRequestRetries: state.identicalRequestRetries,
       taskStartedAtSeq: state.taskStartedAtSeq,
       providerFailures: [...state.providerFailures],
+      ...(state.confirmedRiskTask ? { confirmedRiskTask: true } : {}),
       ...(state.classifiedTurn === undefined ? {} : { classifiedTurn: state.classifiedTurn }),
     }
   }
@@ -328,6 +333,7 @@ export function apply(ctx: Context, config?: Config): void {
     state.identicalRequestRetries = valid.identicalRequestRetries
     state.taskStartedAtSeq = valid.taskStartedAtSeq
     state.providerFailures = [...valid.providerFailures]
+    state.confirmedRiskTask = valid.confirmedRiskTask === true
     state.classifiedTurn = valid.classifiedTurn
     applyRestriction(agent, state)
   }
@@ -342,6 +348,7 @@ export function apply(ctx: Context, config?: Config): void {
     state.identicalRequestRetries = 0
     state.taskStartedAtSeq = agent.session.events.length
     state.providerFailures = []
+    state.confirmedRiskTask = false
     state.classifiedTurn = undefined
     applyRestriction(agent, state)
     persistState(agent, state)
@@ -450,6 +457,7 @@ export function apply(ctx: Context, config?: Config): void {
     if (!isSolAgent(agent)) return next()
     const state = stateFor(agent)
     if (state.mode === 'auto' && state.classifiedTurn !== turn) {
+      state.confirmedRiskTask = false
       const directUser = [...messages].reverse().find(message => message.source.kind === 'user')
       const request = directUser === undefined
         ? ''
@@ -473,8 +481,12 @@ export function apply(ctx: Context, config?: Config): void {
     const state = states.get(agent.session)
     if (state === undefined) return undefined
     const policy = effectivePolicy(state)
-    if (policy.readOnly && isMutatingTool(execution.name)) {
+    const deepAnalysisSubagent = state.workflow.profile.scope === 'deep-analysis' && SUBAGENT_TOOLS.includes(execution.name)
+    if (policy.readOnly && isMutatingTool(execution.name) && !deepAnalysisSubagent) {
       return `tool "${execution.name}" is disabled in ${policy.scope} scope`
+    }
+    if (state.workflow.profile.requiresConfirmation && !state.confirmedRiskTask && isMutatingTool(execution.name)) {
+      return `tool "${execution.name}" requires confirmation for this task; confirm with /sol confirm`
     }
     const info = evaluateBudget(runtimeConfig, {
       steps: state.workflow.steps,
@@ -694,6 +706,11 @@ export function apply(ctx: Context, config?: Config): void {
         if (!isSol || state === undefined) return { kind: 'error', text: 'Sol mode is inactive for the current model.' }
         switchMode(agent, state, 'review')
         return { kind: 'success', text: 'Switched to review mode (read-only). Use /sol mode <name> to change.' }
+      case 'confirm':
+        if (!isSol || state === undefined) return { kind: 'error', text: 'Sol mode is inactive for the current model.' }
+        state.confirmedRiskTask = true
+        persistState(agent, state)
+        return { kind: 'success', text: 'Confirmed the current task risk; mutating tools are enabled subject to the active policy.' }
       case 'reset': {
         const settings = ctx.get('settings')
         if (settings === undefined) return { kind: 'error', text: 'No settings provider is mounted; reset is unavailable.' }

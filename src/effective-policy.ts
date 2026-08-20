@@ -31,7 +31,7 @@ export function resolveEffectivePolicy(input: EffectivePolicyInput): EffectivePo
     && (input.scope === 'modify' || input.scope === 'frontend')
     && input.phase !== 'complete'
     && input.phase !== 'blocked'
-  const deniedTools = readOnly ? deniedToolsForMode('review') : deniedToolsForMode(input.mode)
+  const deniedTools = readOnly ? deniedToolsForMode(input.mode === 'deep-analysis' ? 'deep-analysis' : 'review') : deniedToolsForMode(input.mode)
   return {
     ...input,
     readOnly,

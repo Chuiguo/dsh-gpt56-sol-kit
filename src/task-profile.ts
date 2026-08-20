@@ -40,13 +40,15 @@ export function classifyTask(request: string, explicitMode?: SolMode): TaskProfi
     ? 'review'
     : readOnly
       ? 'diagnose'
-      : REVIEW_WORDS.test(trimmed)
-        ? 'review'
-        : FRONTEND_WORDS.test(trimmed) && modifying
-          ? 'frontend'
-          : DEEP_WORDS.test(trimmed)
-            ? 'deep-analysis'
-            : modifying && (!diagnostic || STRONG_MODIFY.test(trimmed))
+      : STRONG_MODIFY.test(trimmed)
+        ? FRONTEND_WORDS.test(trimmed) ? 'frontend' : 'modify'
+        : REVIEW_WORDS.test(trimmed)
+          ? 'review'
+          : FRONTEND_WORDS.test(trimmed) && modifying
+            ? 'frontend'
+            : DEEP_WORDS.test(trimmed)
+              ? 'deep-analysis'
+              : modifying && !diagnostic
               ? 'modify'
               : diagnostic
                 ? 'diagnose'

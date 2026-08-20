@@ -117,7 +117,7 @@ export function collectVerificationEvidence(input: SessionVerificationInput): Ve
   const browserAcceptance = browserCalls.length > 0 && browserResults.every(result => result?.meta?.browserAccepted === true)
   const unexplainedFailures = [...failed, ...(input.providerFailures ?? [])]
   return {
-    goalCompleted: fileCalls.length > 0 || (!input.webTask && (testsPassed || buildPassed)),
+    goalCompleted: false,
     files,
     diffOnlyRelevant,
     authorizationKnown,

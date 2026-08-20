@@ -81,7 +81,7 @@ export function deniedToolsForMode(mode: SolMode): string[] {
     case 'deep-analysis':
       return [
         ...WRITE_TOOLS, ...SHELL_TOOLS, ...TERMINAL_TOOLS, ...GOAL_WRITE_TOOLS,
-        ...TODO_TOOLS, ...CORDIS_TOOLS, ...SCHEDULE_TOOLS,
+        ...TODO_TOOLS, ...JOB_CONTROL_TOOLS, ...CORDIS_TOOLS, ...SCHEDULE_TOOLS,
       ]
     case 'coding':
     case 'frontend':
